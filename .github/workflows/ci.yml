@@ -35,11 +35,51 @@ jobs:
 
   test:
     needs: clippy
+    strategy:
+      fail-fast: false
+      matrix:
+        rust: [stable, beta]
+        env:
+          - name: ubuntu
+            container: ""
+          - name: debian
+            container: "debian:12"
+          - name: arch
+            container: "archlinux:latest"
+          - name: alpine
+            container: "rust:1-alpine"
+    name: test (${{ matrix.env.name }} / ${{ matrix.rust }})
     runs-on: ubuntu-latest
+    container: ${{ matrix.env.container }}
     steps:
+      - name: Prep (debian)
+        if: matrix.env.name == 'debian'
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends \
+            git curl ca-certificates build-essential pkg-config libssl-dev
+
+      - name: Prep (arch)
+        if: matrix.env.name == 'arch'
+        run: |
+          pacman -Syu --noconfirm git curl base-devel openssl pkgconf
+
+      - name: Prep (alpine)
+        if: matrix.env.name == 'alpine'
+        shell: sh
+        run: |
+          apk add --no-cache git curl ca-certificates bash nodejs musl-dev
+
       - uses: actions/checkout@v6
-      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ matrix.rust }}
+
       - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.env.name }}-${{ matrix.rust }}
+
       - run: cargo test --all-features
 
   build:

@@ -11,10 +11,6 @@ on:
           - minor
           - major
         default: patch
-      ref:
-        description: "Branch or commit to tag"
-        type: string
-        default: master
       beta:
         description: "Append -beta.N suffix"
         type: boolean
@@ -39,7 +35,6 @@ jobs:
     steps:
       - uses: actions/checkout@v6
         with:
-          ref: ${{ inputs.ref }}
           token: ${{ secrets.RELEASE_TOKEN }}
           fetch-depth: 0
 
@@ -93,7 +88,7 @@ jobs:
         run: |
           TAG="v${{ steps.ver.outputs.next }}"
           git tag -a "$TAG" -m "$TAG"
-          git push origin "${{ inputs.ref }}" --follow-tags
+          git push origin "${{ github.ref_name }}" --follow-tags
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
 
   release:
