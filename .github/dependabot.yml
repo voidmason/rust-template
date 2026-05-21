@@ -6,12 +6,12 @@ updates:
       interval: weekly
       time: "06:00"
     target-branch: dependencies
-    open-pull-requests-limit: 10
+    open-pull-requests-limit: 5
     assignees:
       - nerjs
     labels:
       - dependencies
-      - rust
+      - bot
     groups:
       rust-minor-patch:
         update-types:
@@ -29,6 +29,7 @@ updates:
       - nerjs
     labels:
       - dependencies
+      - bot
       - github-actions
     groups:
       gha-minor-patch:

@@ -24,8 +24,8 @@ jobs:
 
       - name: Configure git
         run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git config user.name "nerjs"
+          git config user.email "nerjs.stap@gmail.com"
 
       - name: Sync or prepare deps-sync
         id: sync
