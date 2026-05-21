@@ -46,23 +46,26 @@ jobs:
 
       - name: Configure git
         run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git config user.name "nerjs"
+          git config user.email "nerjs.stap@gmail.com"
 
       - name: Compute next version
         id: ver
+        env:
+          BUMP_LEVEL: ${{ inputs.version }}
+          IS_BETA: ${{ inputs.beta }}
         run: |
           set -euo pipefail
           CURRENT=$(cargo read-manifest | jq -r .version)
           BASE_CURRENT=${CURRENT%%-*}
           IFS=. read MAJ MIN PAT <<< "$BASE_CURRENT"
-          case "${{ inputs.version }}" in
+          case "$BUMP_LEVEL" in
             patch) NEXT_BASE="$MAJ.$MIN.$((PAT+1))" ;;
             minor) NEXT_BASE="$MAJ.$((MIN+1)).0" ;;
             major) NEXT_BASE="$((MAJ+1)).0.0" ;;
           esac
           git fetch --tags
-          if [ "${{ inputs.beta }}" = "true" ]; then
+          if [ "$IS_BETA" = "true" ]; then
             N=$(git tag --list "v${NEXT_BASE}-beta.*" | sed "s/.*-beta\.//" | sort -n | tail -n1)
             N=$((${N:-0}+1))
             NEXT="${NEXT_BASE}-beta.${N}"
@@ -73,22 +76,28 @@ jobs:
           echo "next=$NEXT" >> "$GITHUB_OUTPUT"
 
       - name: Commit
+        env:
+          NEXT_VERSION: ${{ steps.ver.outputs.next }}
+          COMMIT_NOTE: ${{ inputs.commit_note }}
         run: |
-          VERSION="${{ steps.ver.outputs.next }}"
-          MSG="Bump version to v${VERSION}"
-          NOTE="${{ inputs.commit_note }}"
-          if [ -n "$NOTE" ]; then
-            MSG="${MSG}"$'\n\n'"${NOTE}"
+          set -euo pipefail
+          MSG="Bump version to v${NEXT_VERSION}"
+          if [ -n "$COMMIT_NOTE" ]; then
+            MSG="${MSG}"$'\n\n'"${COMMIT_NOTE}"
           fi
           git add Cargo.toml Cargo.lock
           git commit -m "$MSG"
 
       - name: Tag and push
         id: tag
+        env:
+          NEXT_VERSION: ${{ steps.ver.outputs.next }}
+          BRANCH: ${{ github.ref_name }}
         run: |
-          TAG="v${{ steps.ver.outputs.next }}"
+          set -euo pipefail
+          TAG="v${NEXT_VERSION}"
           git tag -a "$TAG" -m "$TAG"
-          git push origin "${{ github.ref_name }}" --follow-tags
+          git push origin "$BRANCH" --follow-tags
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
 
   release:
@@ -103,9 +112,12 @@ jobs:
       - name: Create GitHub Release
         env:
           GH_TOKEN: ${{ secrets.RELEASE_TOKEN }}
+          TAG: ${{ needs.bump.outputs.tag }}
+          IS_BETA: ${{ inputs.beta }}
         run: |
+          set -euo pipefail
           FLAGS="--generate-notes"
-          if [ "${{ inputs.beta }}" = "true" ]; then
+          if [ "$IS_BETA" = "true" ]; then
             FLAGS="$FLAGS --prerelease"
           fi
-          gh release create "${{ needs.bump.outputs.tag }}" $FLAGS
+          gh release create "$TAG" $FLAGS
