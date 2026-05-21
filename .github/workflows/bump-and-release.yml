@@ -1,0 +1,116 @@
+name: Bump version and release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Semver bump level"
+        type: choice
+        options:
+          - patch
+          - minor
+          - major
+        default: patch
+      ref:
+        description: "Branch or commit to tag"
+        type: string
+        default: master
+      beta:
+        description: "Append -beta.N suffix"
+        type: boolean
+        default: false
+      force_release:
+        description: "Create GitHub Release even for beta"
+        type: boolean
+        default: false
+      commit_note:
+        description: "Optional text appended to commit message"
+        type: string
+        default: ""
+
+permissions:
+  contents: write
+
+jobs:
+  bump:
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.tag.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.ref }}
+          token: ${{ secrets.RELEASE_TOKEN }}
+          fetch-depth: 0
+
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-edit
+
+      - name: Configure git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - name: Compute next version
+        id: ver
+        run: |
+          set -euo pipefail
+          CURRENT=$(cargo read-manifest | jq -r .version)
+          BASE_CURRENT=${CURRENT%%-*}
+          IFS=. read MAJ MIN PAT <<< "$BASE_CURRENT"
+          case "${{ inputs.version }}" in
+            patch) NEXT_BASE="$MAJ.$MIN.$((PAT+1))" ;;
+            minor) NEXT_BASE="$MAJ.$((MIN+1)).0" ;;
+            major) NEXT_BASE="$((MAJ+1)).0.0" ;;
+          esac
+          git fetch --tags
+          if [ "${{ inputs.beta }}" = "true" ]; then
+            N=$(git tag --list "v${NEXT_BASE}-beta.*" | sed "s/.*-beta\.//" | sort -n | tail -n1)
+            N=$((${N:-0}+1))
+            NEXT="${NEXT_BASE}-beta.${N}"
+          else
+            NEXT="${NEXT_BASE}"
+          fi
+          cargo set-version "$NEXT"
+          echo "next=$NEXT" >> "$GITHUB_OUTPUT"
+
+      - name: Commit
+        run: |
+          VERSION="${{ steps.ver.outputs.next }}"
+          MSG="Bump version to v${VERSION}"
+          NOTE="${{ inputs.commit_note }}"
+          if [ -n "$NOTE" ]; then
+            MSG="${MSG}"$'\n\n'"${NOTE}"
+          fi
+          git add Cargo.toml Cargo.lock
+          git commit -m "$MSG"
+
+      - name: Tag and push
+        id: tag
+        run: |
+          TAG="v${{ steps.ver.outputs.next }}"
+          git tag -a "$TAG" -m "$TAG"
+          git push origin "${{ inputs.ref }}" --follow-tags
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+
+  release:
+    needs: bump
+    if: ${{ !inputs.beta || inputs.force_release }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.bump.outputs.tag }}
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.RELEASE_TOKEN }}
+        run: |
+          FLAGS="--generate-notes"
+          if [ "${{ inputs.beta }}" = "true" ]; then
+            FLAGS="$FLAGS --prerelease"
+          fi
+          gh release create "${{ needs.bump.outputs.tag }}" $FLAGS
