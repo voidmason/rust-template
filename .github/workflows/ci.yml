@@ -7,13 +7,16 @@ on:
   pull_request:
     branches: [master]
 
+permissions:
+  contents: read
+
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
   fmt:
-    if: ${{ !contains(github.event.head_commit.message || github.event.pull_request.title || '', '[skip-CI]') }}
+    if: ${{ !contains(github.event.head_commit.message || '', '[skip-CI]') }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -51,6 +54,8 @@ jobs:
     name: test (${{ matrix.env.name }} / ${{ matrix.rust }})
     runs-on: ubuntu-latest
     container: ${{ matrix.env.container }}
+    env:
+      RUSTUP_TOOLCHAIN: ${{ matrix.rust }}
     steps:
       - name: Prep (debian)
         if: matrix.env.name == 'debian'
