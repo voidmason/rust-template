@@ -3,9 +3,7 @@ name: CI (deps)
 on:
   workflow_dispatch:
   push:
-    branches:
-      - dependencies
-      - deps-sync
+    branches: [dependencies]
   pull_request:
     branches: [dependencies]
 
