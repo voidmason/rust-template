@@ -28,17 +28,25 @@ permissions:
   contents: write
 
 jobs:
+  checks:
+    uses: ./.github/workflows/checks.yml
+
   bump:
+    needs: checks
     runs-on: ubuntu-latest
     outputs:
       tag: ${{ steps.tag.outputs.tag }}
     steps:
       - uses: actions/checkout@v6
         with:
+          # PAT so the bump commit can be pushed to protected master.
+          # GITHUB_TOKEN (github-actions[bot]) cannot bypass branch rules.
           token: ${{ secrets.RELEASE_TOKEN }}
+          # Keep the PAT out of .git/config for later steps; the push step
+          # passes it explicitly. fetch-depth 0 already brings every tag.
+          persist-credentials: false
           fetch-depth: 0
 
-      - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - uses: taiki-e/install-action@v2
         with:
@@ -64,7 +72,6 @@ jobs:
             minor) NEXT_BASE="$MAJ.$((MIN+1)).0" ;;
             major) NEXT_BASE="$((MAJ+1)).0.0" ;;
           esac
-          git fetch --tags
           if [ "$IS_BETA" = "true" ]; then
             N=$(git tag --list "v${NEXT_BASE}-beta.*" | sed "s/.*-beta\.//" | sort -n | tail -n1)
             N=$((${N:-0}+1))
@@ -93,11 +100,13 @@ jobs:
         env:
           NEXT_VERSION: ${{ steps.ver.outputs.next }}
           BRANCH: ${{ github.ref_name }}
+          REPO: ${{ github.repository }}
+          RELEASE_TOKEN: ${{ secrets.RELEASE_TOKEN }}
         run: |
           set -euo pipefail
           TAG="v${NEXT_VERSION}"
           git tag -a "$TAG" -m "$TAG"
-          git push origin "$BRANCH" --follow-tags
+          git push "https://x-access-token:${RELEASE_TOKEN}@github.com/${REPO}.git" "$BRANCH" --follow-tags
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
 
   release:
@@ -111,7 +120,7 @@ jobs:
 
       - name: Create GitHub Release
         env:
-          GH_TOKEN: ${{ secrets.RELEASE_TOKEN }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG: ${{ needs.bump.outputs.tag }}
           IS_BETA: ${{ inputs.beta }}
         run: |

@@ -9,47 +9,75 @@ release tagging and three publish workflows out of the box.
 2. Rename the package in `Cargo.toml` and update the binary path in `Dockerfile`
    (the `target/release/rust-template` line).
 3. Add the secrets listed in [Secrets](#secrets).
-4. Push to `master`. The first `sync-dependencies` run creates the
-   `dependencies` branch.
+4. Protect `master` by importing a ruleset - see [Branch protection](#branch-protection).
 
-## Branches
+## Dependency flow
 
-| Branch         | Role                                                             |
-|----------------|------------------------------------------------------------------|
-| `master`       | Main line. Protected by required PR.                             |
-| `dependencies` | Receives dependabot PRs and accumulates updates.                 |
-| `deps-sync`    | Throwaway branch for resolving `master` -> `dependencies` conflicts. |
+Dependabot opens PRs straight into `master`. Each PR runs the full `ci.yml`
+(fmt, clippy, the test matrix and a release build), so a bump is merged only
+when it is green. Branch protection keeps `master` green even when several PRs
+land close together - see [Branch protection](#branch-protection).
 
-Dependabot opens PRs into `dependencies`, not `master`, so dependency churn
-stays out of the main line until a human merges it.
+There is no separate dependencies branch. In Rust the compiler, `clippy` and
+the test matrix catch breakage from a bump at PR time, so a holding branch adds
+machinery without adding safety.
 
-`sync-dependencies.yml` runs on each push to `master` and fast-forwards
-`dependencies` when possible. On conflict it force-pushes a fresh snapshot of
-`master` to `deps-sync` and opens (or reuses) a PR `deps-sync -> dependencies`
-for manual conflict resolution.
+## Branch protection
+
+`master` should require a passing CI before a merge. `ci.yml` ends with a
+`CI success` job that depends on every other job - require that single check
+rather than the individual matrix jobs, whose names change with the matrix.
+The job name `CI success` and the ruleset's required-check context are one
+contract: rename one without the other and the required check stays pending
+forever.
+
+Two ready-to-import rulesets live in `.github/rulesets/`. Import one under
+Settings -> Rules -> Rulesets -> "Import a ruleset":
+
+| Ruleset                   | Use it for                              | Catches interaction breakage by                                       |
+|---------------------------|-----------------------------------------|------------------------------------------------------------------------|
+| `master.json`             | personal repos, or orgs without a queue | requiring branches to be up to date before merge (re-runs CI on the rebased PR) |
+| `master-merge-queue.json` | organization repos                      | a merge queue that tests each PR combined with the ones ahead of it    |
+
+Both rulesets let the repository admin (built-in `RepositoryRole` id 5) bypass
+the rule, so `bump-and-release` can push the version commit with
+`RELEASE_TOKEN`. The token must belong to an account with the admin role -
+otherwise the bump push is blocked by the required check, which never runs on a
+direct push. On an org with custom roles, verify the bypass actor id.
+
+Merge queue is available only on organization-owned repositories, not on
+personal accounts. `ci.yml` already triggers on `merge_group`, so enabling the
+queue on an org repo is a single setting. Required status checks can also be
+applied org-wide through an organization-level ruleset; the merge queue rule
+itself is repository-level only.
 
 ## Workflows
 
-| File                                | Trigger                            | Purpose                                                       |
-|-------------------------------------|------------------------------------|---------------------------------------------------------------|
-| `ci.yml`                            | push/PR on master, manual          | fmt, clippy, test matrix (rust x distro), release build       |
-| `ci-deps.yml`                       | push/PR on dependencies, deps-sync | cargo check + cargo test                                      |
-| `sync-dependencies.yml`             | push on master, manual             | sync `master` into `dependencies`                             |
-| `bump-and-release.yml`              | manual                             | bump version, tag, optional GitHub Release                    |
-| `publish-crates.yml`                | manual on a tag                    | publish to crates.io                                          |
-| `publish-docker-hub.yml`            | manual on a tag                    | build and push image to Docker Hub, multi-arch                |
-| `publish-ghcr.yml`                  | manual on a tag                    | build and push image to ghcr.io, multi-arch                   |
-
-Commit-message or PR-title marker `[skip-CI]` skips `ci.yml` and `ci-deps.yml`.
+| File                       | Trigger                                | Purpose                                                 |
+|----------------------------|----------------------------------------|---------------------------------------------------------|
+| `ci.yml`                   | push/PR on master, merge queue, manual | fmt, clippy, test matrix (rust x distro), release build |
+| `bump-and-release.yml`     | manual                                 | bump version, tag, optional GitHub Release              |
+| `publish-crates.yml`       | manual on a tag                        | publish to crates.io                                    |
+| `publish-docker-hub.yml`   | manual on a tag                        | build and push image to Docker Hub, multi-arch          |
+| `publish-ghcr.yml`         | manual on a tag                        | build and push image to ghcr.io, multi-arch             |
 
 ### Test matrix
 
+`fmt` and `clippy` run in parallel, then the `test` matrix, then `build`.
 `ci.yml` runs `cargo test --all-features` across:
 
-- rust: `stable`, `beta`
+- rust: `1.94`, `1.93`, `1.92` - the dev version plus the two below it
 - env: `ubuntu-latest`, `debian:12`, `archlinux:latest`, `rust:1-alpine`
 
-8 jobs total, `fail-fast: false`. Distros run via `container:`.
+12 matrix jobs, `fail-fast: false`. Distros run via `container:`. The dev
+version lives in `rust-toolchain.toml` (used by local builds, the Dockerfile,
+`fmt`/`clippy`/`build` and the publish gate); the matrix lists it plus the two
+below. Raise both by hand when the floor moves. Fixed versions test exactly the
+toolchains you develop and ship on; `stable`/`beta` drift over time.
+
+Keep `rust-toolchain.toml`: `fmt`/`clippy`/`build`, the publish gate and the
+Dockerfile have no explicit toolchain step and fall back to the runner's
+bundled Rust if it is removed.
 
 ### Bump and release
 
@@ -62,19 +90,31 @@ Manual trigger from any branch (selected via "Use workflow from"). Inputs:
 | `force_release` | boolean | false   | create GitHub Release even for a beta tag               |
 | `commit_note`   | string  | ""      | optional text appended to the bump commit message       |
 
-The job updates `Cargo.toml`, commits, tags `vX.Y.Z[-beta.N]`, pushes to the
-selected branch. A second job creates a GitHub Release unless the tag is beta
-and `force_release` is false. Beta releases are marked `--prerelease`.
+A `checks` job (fmt, clippy, tests via the reusable `checks.yml`) runs first;
+nothing is bumped or tagged if it fails. Then the job updates `Cargo.toml`,
+commits, tags `vX.Y.Z[-beta.N]` and pushes the commit and tag to the selected
+branch. Pushing the commit into a protected `master` needs `RELEASE_TOKEN`;
+`GITHUB_TOKEN` cannot bypass branch rules. A second job creates a GitHub
+Release unless the tag is beta and `force_release` is false. Beta releases are
+marked `--prerelease`.
 
 ### Publish
 
 Each publish workflow is triggered manually with "Use workflow from:
-tags/vX.Y.Z". A guard rejects runs from a branch. Docker tags are derived from
-the tag name; `latest` is set only for non-beta tags.
+tags/vX.Y.Z". A guard rejects runs from a branch. Each one first runs the
+reusable `checks.yml` (fmt, clippy, tests on the dev toolchain) against the
+tagged commit and publishes only if it passes - so a tag that never went
+through PR CI cannot ship a broken artifact. The full matrix stays on PRs.
+Docker tags are derived from the tag name; `latest` is
+set only for non-beta tags.
+
+Publish is manual on purpose, so a tag without a published artifact is allowed.
+If you switch to auto-publishing on tag push, you will need a PAT: a tag pushed
+with `GITHUB_TOKEN` does not trigger other workflows.
 
 ## Dependabot
 
-Two ecosystems, both targeting `dependencies`:
+Two ecosystems, both opening PRs into `master`:
 
 - `cargo` - weekly, max 5 open PRs, minor+patch grouped, major opens its own PR
 - `github-actions` - weekly, max 5 open PRs, same grouping
@@ -83,20 +123,24 @@ Two ecosystems, both targeting `dependencies`:
 
 Add these in repository settings before using the relevant workflow:
 
-| Secret                 | Used by                  | Notes                                                                        |
-|------------------------|--------------------------|------------------------------------------------------------------------------|
-| `RELEASE_TOKEN`        | bump, sync, release      | PAT with `contents: write`, `pull-requests: write`. Required so tag pushes trigger downstream workflows; the default `GITHUB_TOKEN` does not. |
-| `CARGO_REGISTRY_TOKEN` | publish-crates           | crates.io API token                                                          |
-| `DOCKERHUB_USERNAME`   | publish-docker-hub       | Docker Hub login                                                             |
-| `DOCKERHUB_TOKEN`      | publish-docker-hub       | Docker Hub access token                                                      |
+| Secret                 | Used by            | Notes                                                                  |
+|------------------------|--------------------|------------------------------------------------------------------------|
+| `RELEASE_TOKEN`        | bump-and-release   | PAT with `contents: write`. Lets the bump commit reach protected `master`; `GITHUB_TOKEN` cannot. |
+| `CARGO_REGISTRY_TOKEN` | publish-crates     | crates.io API token                                                    |
+| `DOCKERHUB_USERNAME`   | publish-docker-hub | Docker Hub login                                                       |
+| `DOCKERHUB_TOKEN`      | publish-docker-hub | Docker Hub access token                                                |
 
-GHCR uses the built-in `GITHUB_TOKEN` with `packages: write`. No extra secret.
+The GitHub Release step and GHCR publish use the built-in `GITHUB_TOKEN`
+(`contents: write` and `packages: write`). No extra secret.
 
 ## Dockerfile
 
 Minimal alpine multi-stage. The binary path in the runtime stage is
 `target/release/rust-template`. Rename it together with the package name in
 `Cargo.toml`, otherwise the `COPY --from=builder` step fails.
+
+A `.dockerignore` keeps `.git`, `target` and local env files out of the build
+context.
 
 Crates with C dependencies under musl need extra apk packages in the builder
 stage (for example `openssl-dev pkgconfig`).
