@@ -38,7 +38,7 @@ jobs:
       matrix:
         # Dev version (matches rust-toolchain.toml) plus the two below it.
         # Raise this list and rust-toolchain.toml together by hand.
-        rust: ["1.94", "1.93", "1.92"]
+        rust: ["1.95", "1.94", "1.93", "1.92"]
         env:
           - name: ubuntu
             container: ""
