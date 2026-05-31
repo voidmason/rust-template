@@ -36,9 +36,12 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # Dev version (matches rust-toolchain.toml) plus the two below it.
-        # Raise this list and rust-toolchain.toml together by hand.
-        rust: ["1.95", "1.94", "1.93", "1.92"]
+        # Pinned floor (dev version from rust-toolchain.toml plus the three
+        # below it) tests the toolchains you develop and ship on; "stable" and
+        # "beta" track the moving channels. beta is allowed to fail, see
+        # continue-on-error below. Raise the pinned list and rust-toolchain.toml
+        # together by hand.
+        rust: ["stable", "beta", "1.95", "1.94", "1.93", "1.92"]
         env:
           - name: ubuntu
             container: ""
@@ -50,6 +53,9 @@ jobs:
             container: "rust:1-alpine"
     name: test (${{ matrix.env.name }} / ${{ matrix.rust }})
     runs-on: ubuntu-latest
+    # beta tracks the upcoming release; an upstream regression there must not
+    # block the merge queue. ci-success counts a continued job as success.
+    continue-on-error: ${{ matrix.rust == 'beta' }}
     container: ${{ matrix.env.container }}
     env:
       RUSTUP_TOOLCHAIN: ${{ matrix.rust }}

@@ -66,14 +66,17 @@ itself is repository-level only.
 `fmt` and `clippy` run in parallel, then the `test` matrix, then `build`.
 `ci.yml` runs `cargo test --all-features` across:
 
-- rust: `1.94`, `1.93`, `1.92` - the dev version plus the two below it
+- rust: `stable`, `beta`, `1.95`, `1.94`, `1.93`, `1.92` - the moving channels
+  plus the dev version and the three below it
 - env: `ubuntu-latest`, `debian:12`, `archlinux:latest`, `rust:1-alpine`
 
-12 matrix jobs, `fail-fast: false`. Distros run via `container:`. The dev
+24 matrix jobs, `fail-fast: false`. Distros run via `container:`. The dev
 version lives in `rust-toolchain.toml` (used by local builds, the Dockerfile,
-`fmt`/`clippy`/`build` and the publish gate); the matrix lists it plus the two
-below. Raise both by hand when the floor moves. Fixed versions test exactly the
-toolchains you develop and ship on; `stable`/`beta` drift over time.
+`fmt`/`clippy`/`build` and the publish gate); the matrix pins it plus the three
+below. Raise the pinned list and `rust-toolchain.toml` by hand when the floor
+moves. The pinned versions test the toolchains you develop and ship on; `stable`
+and `beta` catch upcoming-release breakage early. `beta` is `continue-on-error`
+- an upstream regression there does not block the merge queue.
 
 Keep `rust-toolchain.toml`: `fmt`/`clippy`/`build`, the publish gate and the
 Dockerfile have no explicit toolchain step and fall back to the runner's
@@ -91,9 +94,10 @@ Manual trigger from any branch (selected via "Use workflow from"). Inputs:
 | `commit_note`   | string  | ""      | optional text appended to the bump commit message       |
 
 A `checks` job (fmt, clippy, tests via the reusable `checks.yml`) runs first;
-nothing is bumped or tagged if it fails. Then the job updates `Cargo.toml`,
-commits, tags `vX.Y.Z[-beta.N]` and pushes the commit and tag to the selected
-branch. Pushing the commit into a protected `master` needs `RELEASE_TOKEN`;
+nothing is bumped or tagged if it fails. Then `cargo set-version --workspace`
+bumps every crate (including members that inherit `version.workspace = true`),
+the job commits the changed manifests, tags `vX.Y.Z[-beta.N]` and pushes the
+commit and tag to the selected branch. Pushing the commit into a protected `master` needs `RELEASE_TOKEN`;
 `GITHUB_TOKEN` cannot bypass branch rules. A second job creates a GitHub
 Release unless the tag is beta and `force_release` is false. Beta releases are
 marked `--prerelease`.

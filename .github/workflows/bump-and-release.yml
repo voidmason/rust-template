@@ -79,7 +79,10 @@ jobs:
           else
             NEXT="${NEXT_BASE}"
           fi
-          cargo set-version "$NEXT"
+          # --workspace bumps every member, including crates that inherit the
+          # version via version.workspace = true. A lone package is a one-member
+          # workspace, so this is also correct for the single-crate layout.
+          cargo set-version --workspace "$NEXT"
           echo "next=$NEXT" >> "$GITHUB_OUTPUT"
 
       - name: Commit
@@ -92,7 +95,10 @@ jobs:
           if [ -n "$COMMIT_NOTE" ]; then
             MSG="${MSG}"$'\n\n'"${COMMIT_NOTE}"
           fi
-          git add Cargo.toml Cargo.lock
+          # Stage every manifest the bump touched - root plus all workspace
+          # members - and Cargo.lock. -u is limited to tracked files, so the
+          # clean CI checkout never stages build artifacts.
+          git add -u
           git commit -m "$MSG"
 
       - name: Tag and push
