@@ -84,23 +84,42 @@ bundled Rust if it is removed.
 
 ### Bump and release
 
-Manual trigger from any branch (selected via "Use workflow from"). Inputs:
+Manual trigger from any branch (selected via "Use workflow from"). The only
+input besides `commit_note` is `version` - it carries the whole intent, there
+are no separate beta flags.
 
-| Input           | Type    | Default | Effect                                                  |
-|-----------------|---------|---------|---------------------------------------------------------|
-| `version`       | choice  | patch   | bump level: patch / minor / major                       |
-| `beta`          | boolean | false   | append `-beta.N` suffix; N is auto-incremented per base |
-| `force_release` | boolean | false   | create GitHub Release even for a beta tag               |
-| `commit_note`   | string  | ""      | optional text appended to the bump commit message       |
+| `version`    | What it does           | Example                 | Release    |
+|--------------|------------------------|-------------------------|------------|
+| `patch`      | `--bump patch`         | `0.1.1 -> 0.1.2`        | full       |
+| `minor`      | `--bump minor`         | `0.1.1 -> 0.2.0`        | full       |
+| `major`      | `--bump major`         | `0.1.1 -> 1.0.0`        | full       |
+| `beta`       | `--bump beta`          | `0.1.1 -> 0.1.2-beta.1` | prerelease |
+| `beta-minor` | next minor + `-beta.1` | `0.1.1 -> 0.2.0-beta.1` | prerelease |
+| `beta-major` | next major + `-beta.1` | `0.1.1 -> 1.0.0-beta.1` | prerelease |
+| `finalize`   | `--bump release`       | `0.1.2-beta.3 -> 0.1.2` | full       |
+
+Version math is delegated to `cargo set-version` (cargo-edit); bash only routes
+the action:
+
+- `beta` is universal: on a release version it starts a patch pre-release, on
+  any pre-release it increments the counter (`beta.1 -> beta.2 -> ...`). cargo
+  picks by current state, so there is no separate "continue".
+- `beta-minor`/`beta-major` exist because `--bump beta` always patches the base,
+  so a minor/major pre-release cannot be started in one command.
+- A beta series is tied to one target version. While the version is a
+  pre-release, repeating `beta` accumulates `beta.N`. Switching the level
+  mid-series starts a new one (`beta-minor`/`beta-major`).
+- `finalize` strips the suffix. With no active pre-release it is a no-op: the
+  workflow fails loudly instead of producing an empty commit.
+- prerelease vs full GitHub Release is chosen by the `-beta.N` suffix in the
+  tag, not a separate flag.
 
 A `checks` job (fmt, clippy, tests via the reusable `checks.yml`) runs first;
-nothing is bumped or tagged if it fails. Then `cargo set-version --workspace`
-bumps every crate (including members that inherit `version.workspace = true`),
-the job commits the changed manifests, tags `vX.Y.Z[-beta.N]` and pushes the
-commit and tag to the selected branch. Pushing the commit into a protected `master` needs `RELEASE_TOKEN`;
-`GITHUB_TOKEN` cannot bypass branch rules. A second job creates a GitHub
-Release unless the tag is beta and `force_release` is false. Beta releases are
-marked `--prerelease`.
+nothing is bumped or tagged if it fails. Then `cargo set-version` bumps every
+crate (Cargo.lock follows), the job commits the changed manifests, tags
+`vX.Y.Z[-beta.N]` and pushes commit and tag to the selected branch. Pushing into
+a protected `master` needs `RELEASE_TOKEN`; `GITHUB_TOKEN` cannot bypass branch
+rules. A second job creates a GitHub Release through `GITHUB_TOKEN`.
 
 ### Publish
 
