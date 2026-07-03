@@ -20,6 +20,6 @@ jobs:
     steps:
       - uses: nerjs/branch-sync-action@master
         with:
-          token: ${{ secrets.PUBLISH_TOKEN }}
+          token: ${{ secrets.RELEASE_TOKEN }}
           base: master
           head: dependencies
