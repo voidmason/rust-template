@@ -21,7 +21,7 @@ jobs:
     uses: ./.github/workflows/checks.yml
     
   test:
-    needs: [fmt, clippy]
+    needs: checks
     strategy:
       fail-fast: false
       matrix:
