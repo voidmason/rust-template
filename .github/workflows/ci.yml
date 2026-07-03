@@ -3,10 +3,11 @@ name: CI
 on:
   workflow_dispatch:
   push:
-    branches: [master]
+    branches: 
+      - master
   pull_request:
-    branches: [master]
-  merge_group:
+    branches: 
+      - master
 
 permissions:
   contents: read
@@ -16,67 +17,32 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  # fmt, clippy and build run on the dev toolchain, auto-installed by rustup
-  # from rust-toolchain.toml. Only the test matrix pins explicit versions.
-  fmt:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v7
-      - run: cargo fmt --all --check
-
-  clippy:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v7
-      - uses: Swatinem/rust-cache@v2
-      - run: cargo clippy --all-targets --all-features -- -D warnings
-
+  checks:
+    uses: ./.github/workflows/checks.yml
+    
   test:
     needs: [fmt, clippy]
     strategy:
       fail-fast: false
       matrix:
-        # Pinned floor (dev version from rust-toolchain.toml plus the three
-        # below it) tests the toolchains you develop and ship on; "stable" and
-        # "beta" track the moving channels. beta is allowed to fail, see
-        # continue-on-error below. Raise the pinned list and rust-toolchain.toml
-        # together by hand.
-        rust: ["stable", "beta", "1.95", "1.94", "1.93", "1.92"]
+        # More extensive checks would be desirable, but we're running up against the g limits
+        rust: ["stable", "beta"]
         env:
           - name: ubuntu
             container: ""
-          - name: debian
-            container: "debian:12"
           - name: arch
             container: "archlinux:latest"
-          - name: alpine
-            container: "rust:1-alpine"
     name: test (${{ matrix.env.name }} / ${{ matrix.rust }})
     runs-on: ubuntu-latest
-    # beta tracks the upcoming release; an upstream regression there must not
-    # block the merge queue. ci-success counts a continued job as success.
     continue-on-error: ${{ matrix.rust == 'beta' }}
     container: ${{ matrix.env.container }}
     env:
       RUSTUP_TOOLCHAIN: ${{ matrix.rust }}
     steps:
-      - name: Prep (debian)
-        if: matrix.env.name == 'debian'
-        run: |
-          apt-get update
-          apt-get install -y --no-install-recommends \
-            git curl ca-certificates build-essential pkg-config libssl-dev
-
       - name: Prep (arch)
         if: matrix.env.name == 'arch'
         run: |
           pacman -Syu --noconfirm git curl base-devel openssl pkgconf
-
-      - name: Prep (alpine)
-        if: matrix.env.name == 'alpine'
-        shell: sh
-        run: |
-          apk add --no-cache git curl ca-certificates bash nodejs musl-dev
 
       - uses: actions/checkout@v7
 

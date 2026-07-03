@@ -1,0 +1,25 @@
+name: "SYNC: dependencies <- master"
+
+on:
+  push:
+    branches: 
+      - master
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: sync-dependencies
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: nerjs/branch-sync-action@master
+        with:
+          token: ${{ secrets.PUBLISH_TOKEN }}
+          base: master
+          head: dependencies

@@ -27,8 +27,18 @@ jobs:
   checks:
     uses: ./.github/workflows/checks.yml
 
-  bump:
+  test:
     needs: checks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo test --all-features
+
+  bump:
+    needs: 
+      - checks
+      - test
     runs-on: ubuntu-latest
     outputs:
       tag: ${{ steps.tag.outputs.tag }}
