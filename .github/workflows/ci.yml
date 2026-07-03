@@ -71,7 +71,7 @@ jobs:
   ci-success:
     name: CI success
     if: ${{ always() }}
-    needs: [fmt, clippy, test, build]
+    needs: [checks, test, build]
     runs-on: ubuntu-latest
     steps:
       - name: Check job results
