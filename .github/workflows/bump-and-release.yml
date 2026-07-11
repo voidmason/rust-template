@@ -38,7 +38,7 @@ jobs:
       - test
     runs-on: ubuntu-latest
     steps:
-      - uses: nerjs/bump-release-action@v1
+      - uses: voidmason/bump-release-action@v1
         with:
           # PAT: GITHUB_TOKEN cannot push the bump commit to protected master.
           token: ${{ secrets.RELEASE_TOKEN }}
