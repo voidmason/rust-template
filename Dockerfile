@@ -1,11 +1,11 @@
-# Base image is just the musl build environment; the compiler version comes
-# from rust-toolchain.toml (rustup auto-installs it during cargo build).
-FROM rust:1-alpine AS builder
+# Runtime is distroless/cc (glibc), so build on a matching Debian glibc:
+# bookworm pairs with cc-debian12. Rust version comes from rust-toolchain.toml,
+# not the image tag.
+FROM rust:1-bookworm AS builder
 WORKDIR /app
-RUN apk add --no-cache musl-dev
 COPY . .
 RUN cargo build --release
 
-FROM alpine:3
+FROM gcr.io/distroless/cc-debian12
 COPY --from=builder /app/target/release/rust-template /app
 ENTRYPOINT ["/app"]

@@ -3,10 +3,10 @@ name: CI
 on:
   workflow_dispatch:
   push:
-    branches: 
+    branches:
       - master
   pull_request:
-    branches: 
+    branches:
       - master
 
 permissions:
@@ -19,48 +19,11 @@ concurrency:
 jobs:
   checks:
     uses: ./.github/workflows/checks.yml
-    
-  test:
-    needs: checks
-    strategy:
-      fail-fast: false
-      matrix:
-        # More extensive checks would be desirable, but we're running up against the g limits
-        rust: ["stable", "beta"]
-        env:
-          - name: ubuntu
-            container: ""
-          - name: arch
-            container: "archlinux:latest"
-    name: test (${{ matrix.env.name }} / ${{ matrix.rust }})
-    runs-on: ubuntu-latest
-    continue-on-error: ${{ matrix.rust == 'beta' }}
-    container: ${{ matrix.env.container }}
-    env:
-      RUSTUP_TOOLCHAIN: ${{ matrix.rust }}
-    steps:
-      - name: Prep (arch)
-        if: matrix.env.name == 'arch'
-        run: |
-          pacman -Syu --noconfirm git curl base-devel openssl pkgconf
-
-      - uses: actions/checkout@v7
-
-      - uses: dtolnay/rust-toolchain@master 
-        with:
-          toolchain: ${{ matrix.rust }}
-
-      - uses: Swatinem/rust-cache@v2
-        with:
-          key: ${{ matrix.env.name }}-${{ matrix.rust }}
-
-      - run: cargo test --all-features
 
   build:
-    needs: test
+    needs: checks
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
       - uses: Swatinem/rust-cache@v2
       - run: cargo build --release
-

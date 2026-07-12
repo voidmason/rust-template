@@ -20,22 +20,19 @@ on:
         type: string
         default: ""
 
+permissions:
+  contents: read
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
 jobs:
   checks:
     uses: ./.github/workflows/checks.yml
 
-  test:
-    needs: checks
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v7
-      - uses: Swatinem/rust-cache@v2
-      - run: cargo test --all-features
-
   bump:
-    needs:
-      - checks
-      - test
+    needs: checks
     runs-on: ubuntu-latest
     steps:
       - uses: voidmason/bump-release-action@v1

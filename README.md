@@ -9,8 +9,9 @@ and three publish workflows out of the box.
 1. Click "Use this template" -> "Create a new repository" on GitHub.
 2. Rename the package in `Cargo.toml` and update the binary path in `Dockerfile`
    (the `target/release/rust-template` line).
-3. Adjust the committer identity in `bump-and-release.yml` (the "Configure git"
-   step) - it is hardcoded to the template author.
+3. Set the committer identity: pass `name` and `email` to the
+   `bump-release-action` step in `bump-and-release.yml` (it defaults to
+   `voidmason`).
 4. Create a `dependencies` branch from `master`: dependabot targets it, and the
    sync workflow requires it to exist.
 5. Add the secrets listed in [Secrets](#secrets).
@@ -18,9 +19,8 @@ and three publish workflows out of the box.
 ## Dependency flow
 
 Dependabot opens weekly PRs into the `dependencies` branch, where updates
-accumulate away from the trunk. Each PR is gated by the lite CI
-(`ci-dependencies.yml`): the reusable checks plus a single test run - enough to
-catch a broken bump without spending the full matrix on every bot PR.
+accumulate away from the trunk. Each PR is gated by lite CI (`ci-dependencies.yml`):
+the reusable checks alone, without the release build that full CI adds.
 
 On every push to `master` the sync workflow merges the trunk into
 `dependencies` ([branch-sync-action]): a clean merge is pushed, a lockfile-only
@@ -34,9 +34,9 @@ by hand. Delivery back to the trunk is a single reviewed PR
 
 | File                     | Trigger                               | Purpose                                        |
 |--------------------------|---------------------------------------|------------------------------------------------|
-| `ci.yml`                 | push/PR on master, manual             | checks -> test matrix -> release build         |
-| `checks.yml`             | workflow_call                         | fmt + clippy + `cargo check`, reused as a gate |
-| `ci-dependencies.yml`    | push/PR on dependencies, manual       | lite CI for dependency bumps: checks + tests   |
+| `ci.yml`                 | push/PR on master, manual             | checks -> release build                        |
+| `checks.yml`             | workflow_call                         | fmt + clippy + check + test, reused as a gate  |
+| `ci-dependencies.yml`    | push/PR on dependencies, manual       | lite CI for dependency bumps: checks, no build |
 | `sync-dependencies.yml`  | push on master, manual                | merge master into the dependencies branch      |
 | `audit.yml`              | weekly cron, manifest changes, manual | `cargo audit` against the RustSec advisory DB  |
 | `bump-and-release.yml`   | manual                                | bump version, tag, GitHub Release              |
@@ -46,25 +46,14 @@ by hand. Delivery back to the trunk is a single reviewed PR
 
 ### CI
 
-`checks.yml` is the shared entry gate: `fmt`, `clippy` and `cargo check` run in
-parallel on the toolchain from `rust-toolchain.toml`. `ci.yml` chains it into
-the test matrix and finishes with a release build.
+`checks.yml` is the shared entry gate. It runs `fmt`, `clippy`, `cargo check`
+and `cargo test --all-features` on the toolchain from `rust-toolchain.toml`.
+`ci.yml` chains the gate, then a release build; `ci-dependencies.yml` runs the
+gate alone.
 
-`cargo test --all-features` runs across:
-
-- rust: `stable` and `beta`; `beta` is `continue-on-error`, so an upcoming
-  release regression is visible without failing the run
-- env: `ubuntu-latest` and `archlinux:latest` (via `container:`, with a pacman
-  prep step before checkout)
-
-4 jobs, `fail-fast: false`. The job-level `RUSTUP_TOOLCHAIN` overrides
-`rust-toolchain.toml`, and `dtolnay/rust-toolchain` installs the requested
-version - the arch container has no preinstalled Rust.
-
-Keep `rust-toolchain.toml`: every job outside the test matrix (checks, the lite
-CI, `build`, the bump and publish gates) carries no toolchain step, as does the
-Dockerfile. Remove the file and they silently fall back to the runner's bundled
-Rust.
+Keep `rust-toolchain.toml`: neither the CI jobs nor the Dockerfile carry a
+toolchain step. Without it, CI falls back to the runner's bundled Rust and the
+Docker build to the image's.
 
 ### Bump and release
 
@@ -98,21 +87,20 @@ the action:
 - prerelease vs full GitHub Release is chosen by the `-beta.N` suffix in the
   tag, not a separate flag.
 
-The checks gate and a test run come first; nothing is bumped or tagged if they
-fail. Then `cargo set-version` bumps every crate (Cargo.lock follows), the job
-commits the changed manifests, tags `vX.Y.Z[-beta.N]` and pushes commit and tag
-to the selected branch. The push uses `RELEASE_TOKEN`: a push made with the
-default `GITHUB_TOKEN` does not trigger other workflows, so CI and the
-dependencies sync would skip the bump commit. A second job creates a GitHub
-Release through `GITHUB_TOKEN`.
+The checks gate comes first; nothing is bumped or tagged if it fails. Then
+`bump-release-action` runs `cargo set-version` (Cargo.lock follows), commits the
+changed manifests, tags `vX.Y.Z[-beta.N]`, and atomically pushes the commit and
+tag to the selected branch. It uses `RELEASE_TOKEN` throughout: a push made with
+the default `GITHUB_TOKEN` would not trigger other workflows, so CI and the
+dependencies sync would skip the bump commit. The same action then creates the
+GitHub Release - final tags only, a beta stays a plain tag - also via
+`RELEASE_TOKEN`.
 
 ### Publish
 
 Each publish workflow is triggered manually with "Use workflow from:
 tags/vX.Y.Z". A guard rejects runs from a branch. Each one first runs the
-reusable checks against the tagged commit and publishes only if they pass;
-tests are not repeated at publish time - the tag is expected to point at a
-commit that already went through CI.
+reusable checks against the tagged commit and publishes only if they pass.
 
 `publish-crates` takes a `dry_run` flag, `publish-docker-hub` asks for the
 image name (`namespace/name`), GHCR derives everything from the repository.
@@ -153,17 +141,24 @@ Add these in repository settings before using the relevant workflow:
 the default token do not trigger the workflows that must run on the pushed
 commits: CI on the bump commit, the lite CI on a synced `dependencies`.
 
-The GitHub Release step and GHCR publish use the built-in `GITHUB_TOKEN`
-(`contents: write` and `packages: write`). No extra secret.
+GHCR publish uses the built-in `GITHUB_TOKEN` (`packages: write`). No extra
+secret. The GitHub Release is created by `bump-and-release` with `RELEASE_TOKEN`,
+not `GITHUB_TOKEN`.
 
 ## Dockerfile
 
-Minimal alpine multi-stage. The binary path in the runtime stage is
-`target/release/rust-template`. Rename it together with the package name in
-`Cargo.toml`, otherwise the `COPY --from=builder` step fails.
+Multi-stage build: compile on `rust:1-bookworm`, run from `distroless/cc-debian12`.
+Both are Debian 12, so the binary gets the same glibc at build and at run time -
+a load-bearing pairing; bump the builder and runtime tags together.
+
+The binary path is `target/release/rust-template`. Rename it to match the
+package name in `Cargo.toml`, or the `COPY --from=builder` step fails.
 
 A `.dockerignore` keeps `.git`, `target` and local env files out of the build
 context.
 
-Crates with C dependencies under musl need extra apk packages in the builder
-stage (for example `openssl-dev pkgconfig`).
+`distroless/cc` ships only glibc, libgcc and libssl, and has no package manager.
+A crate that dynamically links another C library builds cleanly but fails at
+startup on the missing `.so` - link it statically or vendor it (openssl's
+`vendored` feature, or rustls), or change the runtime base. Build-time `-dev`
+packages still go in the builder stage via `apt-get`.
