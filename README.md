@@ -7,14 +7,49 @@ and three publish workflows out of the box.
 ## Use it
 
 1. Click "Use this template" -> "Create a new repository" on GitHub.
-2. Rename the package in `Cargo.toml` and update the binary path in `Dockerfile`
-   (the `target/release/rust-template` line).
-3. Set the committer identity: pass `name` and `email` to the
+2. Trim the files to the project type - see [Project types](#project-types).
+3. Rename the package in `Cargo.toml`. If the Dockerfile stays, update the
+   binary path in it (the `target/release/rust-template` line).
+4. Set the committer identity: pass `name` and `email` to the
    `bump-release-action` step in `bump-and-release.yml` (it defaults to
    `voidmason`).
-4. Create a `dependencies` branch from `master`: dependabot targets it, and the
+5. Create a `dependencies` branch from `master`: dependabot targets it, and the
    sync workflow requires it to exist.
-5. Add the secrets listed in [Secrets](#secrets).
+6. Add the secrets listed in [Secrets](#secrets).
+
+## Project types
+
+The template carries the union of files for three project shapes, so a fresh
+repository always starts with extras. Keep what the project needs, delete the
+rest.
+
+### Library
+
+- Replace `src/main.rs` with `src/lib.rs`.
+- Delete `Dockerfile`, `.dockerignore`, `publish-docker-hub.yml` and
+  `publish-ghcr.yml` - there is nothing to containerize.
+- `publish-crates.yml` is the release channel. Add `CARGO_REGISTRY_TOKEN` and
+  the `description` and `license` fields `cargo publish` requires.
+- The `build` job in `ci.yml` is optional for a library: the checks already
+  compile it. Keep it if you want a release-profile gate.
+
+### Binary installed with cargo install
+
+- Delete `Dockerfile`, `.dockerignore`, `publish-docker-hub.yml` and
+  `publish-ghcr.yml`.
+- `publish-crates.yml` is the release channel: `cargo install` pulls from
+  crates.io, with the same manifest requirements as for a library.
+
+### Binary running in a container
+
+- Delete `publish-crates.yml`; `CARGO_REGISTRY_TOKEN` is not needed.
+- Pick a registry: `publish-ghcr.yml` works with the built-in `GITHUB_TOKEN`,
+  `publish-docker-hub.yml` needs the `DOCKERHUB_*` secrets. Keep one or both.
+- Update the binary path in `Dockerfile` and mind the runtime-image caveats -
+  see [Dockerfile](#dockerfile).
+
+Everything else - CI, the `dependencies` branch flow, audit, bump-and-release,
+dependabot, `rust-toolchain.toml` - applies to all three shapes.
 
 ## Dependency flow
 
