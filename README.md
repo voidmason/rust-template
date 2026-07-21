@@ -7,13 +7,14 @@ release tagging and three publish workflows out of the box.
 ## Use it
 
 1. Click "Use this template" -> "Create a new repository" on GitHub.
-2. Trim the files to the project type - see [Project types](#project-types).
-3. Rename the package in `Cargo.toml`.
+2. Create a `dependencies` branch from `master` before pushing any changes:
+   dependabot targets it, and the sync workflow - which runs on every push to `master` - requires it to exist.
+3. Trim the files to the project type - see [Project types](#project-types).
+4. Rename the package in `Cargo.toml`.
    If the Dockerfile stays, update the binary path in it (the `target/release/rust-template` line).
-4. Optionally set the committer identity for release commits:
+5. Optionally set the committer identity for release commits:
    pass `name` and `email` to the [bump-release] step in `bump-and-release.yml`;
    by default it is resolved from the token.
-5. Create a `dependencies` branch from `master`: dependabot targets it, and the sync workflow requires it to exist.
 6. Add the secrets listed in [Secrets](#secrets).
 
 ## Project types
@@ -121,7 +122,7 @@ it runs the full `ci.yml`.
 ### CI
 
 `checks.yml` is the shared entry gate.
-It runs `fmt`, `clippy --all-targets --all-features`, `cargo check --all-features`
+It runs `fmt`, `clippy --all-targets --all-features -- -D warnings`, `cargo check --all-features`
 and `cargo test --all-features` on the toolchain from `rust-toolchain.toml`.
 `ci.yml` chains the gate, then a release build; `ci-dependencies.yml` runs the gate alone.
 
@@ -166,18 +167,15 @@ The checks gate comes first; nothing is bumped or tagged if it fails.
 Then [bump-release] runs `cargo set-version` (Cargo.lock follows),
 commits the changed manifests, tags `vX.Y.Z[-beta.N]`,
 and atomically pushes the commit and tag to the selected branch.
-It uses `RELEASE_TOKEN` throughout:
-a push made with the default `GITHUB_TOKEN` would not trigger other workflows,
-so CI and the dependencies sync would skip the bump commit.
-The same action then creates the GitHub Release -
-final tags only, a beta stays a plain tag - also via `RELEASE_TOKEN`.
+Both the push and the GitHub Release it then creates use `RELEASE_TOKEN`, not `GITHUB_TOKEN`;
+see [Secrets](#secrets) for why a PAT is required.
 
 [bump-release]: https://github.com/voidmason/bump-release
 
 ### Publish
 
 Each publish workflow is triggered manually with "Use workflow from: tags/vX.Y.Z".
-A run started from a branch is skipped: both jobs no-op and the run ends green.
+A run started from a branch is skipped: both jobs no-op, so the run does not fail (it shows as skipped, not red).
 Each one first runs the reusable checks against the tagged commit and publishes only if they pass.
 
 `publish-crates` takes a `dry_run` flag, `publish-docker-hub` asks for the image name (`namespace/name`),
@@ -185,8 +183,7 @@ GHCR derives everything from the repository.
 Docker tags come from the tag name; `latest` is set only for non-beta tags.
 
 Publish is manual on purpose, so a tag without a published artifact is allowed.
-If you switch to auto-publishing on tag push, you will need a PAT:
-a tag pushed with `GITHUB_TOKEN` does not trigger other workflows.
+Switching to auto-publish on tag push would need a PAT here too - see [Secrets](#secrets).
 
 ### Audit
 
@@ -212,8 +209,11 @@ Add these in repository settings before using the relevant workflow:
 | `DOCKERHUB_USERNAME`   | publish-docker-hub                  | Docker Hub login        |
 | `DOCKERHUB_TOKEN`      | publish-docker-hub                  | Docker Hub access token |
 
-`RELEASE_TOKEN` is a PAT with contents and pull requests read/write (classic: `repo`),
-plus the `workflow` scope - a sync can carry changes under `.github/workflows`.
+`RELEASE_TOKEN` is a PAT.
+A fine-grained PAT scoped to this one repository is the least-privilege choice:
+Contents read/write, Pull requests read/write, and Workflows read/write -
+a sync can carry changes under `.github/workflows`.
+A classic PAT works too but is broader: its `repo` scope reaches every repository the owner can access.
 A PAT rather than `GITHUB_TOKEN` because pushes made with the default token do not trigger the workflows
 that must run on the pushed commits: CI on the bump commit, the lite CI on a synced `dependencies`.
 
