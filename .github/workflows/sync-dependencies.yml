@@ -1,8 +1,8 @@
-name: "SYNC: dependencies <- master"
+name: "Sync: dependencies <- master"
 
 on:
   push:
-    branches: 
+    branches:
       - master
   workflow_dispatch:
 

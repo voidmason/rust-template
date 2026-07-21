@@ -1,20 +1,19 @@
 # rust-template
 
-GitHub template repository for new Rust projects. Provides CI, a staging
-branch for dependabot updates, a scheduled security audit, release tagging
-and three publish workflows out of the box.
+GitHub template repository for new Rust projects.
+Provides CI, a staging branch for dependabot updates, a scheduled security audit,
+release tagging and three publish workflows out of the box.
 
 ## Use it
 
 1. Click "Use this template" -> "Create a new repository" on GitHub.
 2. Trim the files to the project type - see [Project types](#project-types).
-3. Rename the package in `Cargo.toml`. If the Dockerfile stays,
-   update the binary path in it (the `target/release/rust-template` line).
+3. Rename the package in `Cargo.toml`.
+   If the Dockerfile stays, update the binary path in it (the `target/release/rust-template` line).
 4. Optionally set the committer identity for release commits:
    pass `name` and `email` to the [bump-release] step in `bump-and-release.yml`;
    by default it is resolved from the token.
-5. Create a `dependencies` branch from `master`: dependabot targets it, and the
-   sync workflow requires it to exist.
+5. Create a `dependencies` branch from `master`: dependabot targets it, and the sync workflow requires it to exist.
 6. Add the secrets listed in [Secrets](#secrets).
 
 ## Project types
@@ -30,8 +29,8 @@ make the calls below right after creating the repository.
 
 - Replace `src/main.rs` with `src/lib.rs`; delete `Dockerfile`, `.dockerignore`,
   `publish-docker-hub.yml` and `publish-ghcr.yml`.
-- `publish-crates.yml` is the release channel. Add `CARGO_REGISTRY_TOKEN`
-  and the `description` and `license` fields `cargo publish` requires.
+- `publish-crates.yml` is the release channel.
+  Add `CARGO_REGISTRY_TOKEN` and the `description` and `license` fields `cargo publish` requires.
 - The compiler is not yours anymore: consumers build the crate
   with whatever toolchain they have,
   so green checks on the pinned version say nothing about them.
@@ -62,7 +61,8 @@ make the calls below right after creating the repository.
 
 - Delete `publish-crates.yml`; `CARGO_REGISTRY_TOKEN` is not needed.
 - Pick a registry: `publish-ghcr.yml` works with the built-in `GITHUB_TOKEN`,
-  `publish-docker-hub.yml` needs the `DOCKERHUB_*` secrets. Keep one or both.
+  `publish-docker-hub.yml` needs the `DOCKERHUB_*` secrets.
+  Keep one or both.
 - This is the shape the template's defaults are built for.
   You control the compiler end to end,
   so keep the `rust-toolchain.toml` pin and bump it deliberately;
@@ -72,14 +72,14 @@ make the calls below right after creating the repository.
   CI (ubuntu) and the runtime image share glibc,
   so tests and the shipped binary see the same libc.
   Moving the runtime to musl (alpine) silently breaks that alignment -
-  then a `x86_64-unknown-linux-musl` check in CI becomes your job.
+  then an `x86_64-unknown-linux-musl` check in CI becomes your job.
 
 Everything else - CI, the `dependencies` branch flow, audit, bump-and-release,
 dependabot - applies to all three shapes.
 
 The shapes are axes, not exclusive cases: a crate can be a library with a CLI,
-or ship to crates.io and a registry at once. Union the files,
-and when the toolchain policies collide the crates.io side wins -
+or ship to crates.io and a registry at once.
+Union the files, and when the toolchain policies collide the crates.io side wins -
 external consumers force `rust-version`, the container merely prefers a pin.
 
 One axis is absent on purpose: an environment matrix.
@@ -90,8 +90,8 @@ are project-specific; add them in the project when it actually targets them.
 
 ## Dependency flow
 
-Dependabot opens weekly PRs into the `dependencies` branch, where updates
-accumulate away from the trunk. Each PR is gated by lite CI (`ci-dependencies.yml`):
+Dependabot opens weekly PRs into the `dependencies` branch, where updates accumulate away from the trunk.
+Each PR is gated by lite CI (`ci-dependencies.yml`):
 the reusable checks alone, without the release build that full CI adds.
 
 On every push to `master` the sync workflow merges the trunk
@@ -120,56 +120,54 @@ it runs the full `ci.yml`.
 
 ### CI
 
-`checks.yml` is the shared entry gate. It runs `fmt`, `clippy`, `cargo check`
+`checks.yml` is the shared entry gate.
+It runs `fmt`, `clippy --all-targets --all-features`, `cargo check --all-features`
 and `cargo test --all-features` on the toolchain from `rust-toolchain.toml`.
-`ci.yml` chains the gate, then a release build; `ci-dependencies.yml` runs the
-gate alone.
+`ci.yml` chains the gate, then a release build; `ci-dependencies.yml` runs the gate alone.
 
-Keep `rust-toolchain.toml`: neither the CI jobs nor the Dockerfile
-carry a toolchain step. Without it, CI falls back to the runner's bundled Rust
-and the Docker build to the image's.
-Whether pinning is right at all depends on the project shape -
-see [Project types](#project-types).
+Keep `rust-toolchain.toml`: neither the CI jobs nor the Dockerfile carries a toolchain step.
+Without it, CI falls back to the runner's bundled Rust and the Docker build to the image's.
+Whether pinning is right at all depends on the project shape - see [Project types](#project-types).
 
 ### Bump and release
 
-Manual trigger from any branch (selected via "Use workflow from"). The only
-input besides `commit_note` is `version` - it carries the whole intent, there
-are no separate beta flags.
+Manual trigger from any branch (selected via "Use workflow from").
+The only input besides `commit_note` is `version` - it carries the whole intent:
+there are no separate beta flags.
 
-| `version`    | What it does           | Example                 | Release    |
-|--------------|------------------------|-------------------------|------------|
-| `patch`      | `--bump patch`         | `0.1.1 -> 0.1.2`        | full       |
-| `minor`      | `--bump minor`         | `0.1.1 -> 0.2.0`        | full       |
-| `major`      | `--bump major`         | `0.1.1 -> 1.0.0`        | full       |
-| `beta`       | `--bump beta`          | `0.1.1 -> 0.1.2-beta.1` | prerelease |
-| `beta-minor` | next minor + `-beta.1` | `0.1.1 -> 0.2.0-beta.1` | prerelease |
-| `beta-major` | next major + `-beta.1` | `0.1.1 -> 1.0.0-beta.1` | prerelease |
-| `finalize`   | `--bump release`       | `0.1.2-beta.3 -> 0.1.2` | full       |
+| `version`    | What it does           | Example                 | Release  |
+|--------------|------------------------|-------------------------|----------|
+| `patch`      | `--bump patch`         | `0.1.1 -> 0.1.2`        | full     |
+| `minor`      | `--bump minor`         | `0.1.1 -> 0.2.0`        | full     |
+| `major`      | `--bump major`         | `0.1.1 -> 1.0.0`        | full     |
+| `beta`       | `--bump beta`          | `0.1.1 -> 0.1.2-beta.1` | tag only |
+| `beta-minor` | next minor + `-beta.1` | `0.1.1 -> 0.2.0-beta.1` | tag only |
+| `beta-major` | next major + `-beta.1` | `0.1.1 -> 1.0.0-beta.1` | tag only |
+| `finalize`   | `--bump release`       | `0.1.2-beta.3 -> 0.1.2` | full     |
 
 The whole job is a single [bump-release] call.
 Version math is delegated to `cargo set-version` (cargo-edit);
 the action only routes the input:
 
-- `beta` is universal: on a release version it starts a patch pre-release, on
-  any pre-release it increments the counter (`beta.1 -> beta.2 -> ...`). cargo
-  picks by current state, so there is no separate "continue".
+- `beta` is universal: on a release version it starts a patch pre-release,
+  on any pre-release it increments the counter (`beta.1 -> beta.2 -> ...`).
+  cargo picks by current state, so there is no separate "continue".
 - `beta-minor`/`beta-major` exist because `--bump beta` always patches the base,
   so a minor/major pre-release cannot be started in one command.
-- A beta series is tied to one target version. While the version is a
-  pre-release, repeating `beta` accumulates `beta.N`. Switching the level
-  mid-series starts a new one (`beta-minor`/`beta-major`).
-- `finalize` strips the suffix. With no active pre-release it is a no-op: the
-  workflow fails loudly instead of producing an empty commit.
-- prerelease vs full GitHub Release is chosen by the `-beta.N` suffix in the
-  tag, not a separate flag.
+- A beta series is tied to one target version.
+  While the version is a pre-release, repeating `beta` accumulates `beta.N`.
+  Switching the level mid-series starts a new one (`beta-minor`/`beta-major`).
+- `finalize` strips the suffix.
+  With no active pre-release it is a no-op: the workflow fails loudly instead of producing an empty commit.
+- a `-beta.N` tag stays a plain tag: by default a GitHub Release is created for final tags only.
+  Pass `prerelease: true` to [bump-release] to publish betas as GitHub pre-releases too.
 
 The checks gate comes first; nothing is bumped or tagged if it fails.
 Then [bump-release] runs `cargo set-version` (Cargo.lock follows),
 commits the changed manifests, tags `vX.Y.Z[-beta.N]`,
 and atomically pushes the commit and tag to the selected branch.
-It uses `RELEASE_TOKEN` throughout: a push made with the default `GITHUB_TOKEN`
-would not trigger other workflows,
+It uses `RELEASE_TOKEN` throughout:
+a push made with the default `GITHUB_TOKEN` would not trigger other workflows,
 so CI and the dependencies sync would skip the bump commit.
 The same action then creates the GitHub Release -
 final tags only, a beta stays a plain tag - also via `RELEASE_TOKEN`.
@@ -178,24 +176,23 @@ final tags only, a beta stays a plain tag - also via `RELEASE_TOKEN`.
 
 ### Publish
 
-Each publish workflow is triggered manually with "Use workflow from:
-tags/vX.Y.Z". A guard rejects runs from a branch. Each one first runs the
-reusable checks against the tagged commit and publishes only if they pass.
+Each publish workflow is triggered manually with "Use workflow from: tags/vX.Y.Z".
+A run started from a branch is skipped: both jobs no-op and the run ends green.
+Each one first runs the reusable checks against the tagged commit and publishes only if they pass.
 
-`publish-crates` takes a `dry_run` flag, `publish-docker-hub` asks for the
-image name (`namespace/name`), GHCR derives everything from the repository.
+`publish-crates` takes a `dry_run` flag, `publish-docker-hub` asks for the image name (`namespace/name`),
+GHCR derives everything from the repository.
 Docker tags come from the tag name; `latest` is set only for non-beta tags.
 
 Publish is manual on purpose, so a tag without a published artifact is allowed.
-If you switch to auto-publishing on tag push, you will need a PAT: a tag pushed
-with `GITHUB_TOKEN` does not trigger other workflows.
+If you switch to auto-publishing on tag push, you will need a PAT:
+a tag pushed with `GITHUB_TOKEN` does not trigger other workflows.
 
 ### Audit
 
 `cargo audit` checks the dependency tree against the RustSec advisory database
-every Monday at 06:00 UTC, on any push touching `Cargo.toml`/`Cargo.lock`, and
-on demand. The schedule surfaces new advisories even when the repository is
-quiet.
+every Monday at 06:00 UTC, on any push touching `Cargo.toml`/`Cargo.lock`, and on demand.
+The schedule surfaces new advisories even when the repository is quiet.
 
 ## Dependabot
 
@@ -215,15 +212,14 @@ Add these in repository settings before using the relevant workflow:
 | `DOCKERHUB_USERNAME`   | publish-docker-hub                  | Docker Hub login        |
 | `DOCKERHUB_TOKEN`      | publish-docker-hub                  | Docker Hub access token |
 
-`RELEASE_TOKEN` is a PAT with contents and pull requests read/write (classic:
-`repo`), plus the `workflow` scope - a sync can carry changes under
-`.github/workflows`. A PAT rather than `GITHUB_TOKEN` because pushes made with
-the default token do not trigger the workflows that must run on the pushed
-commits: CI on the bump commit, the lite CI on a synced `dependencies`.
+`RELEASE_TOKEN` is a PAT with contents and pull requests read/write (classic: `repo`),
+plus the `workflow` scope - a sync can carry changes under `.github/workflows`.
+A PAT rather than `GITHUB_TOKEN` because pushes made with the default token do not trigger the workflows
+that must run on the pushed commits: CI on the bump commit, the lite CI on a synced `dependencies`.
 
-GHCR publish uses the built-in `GITHUB_TOKEN` (`packages: write`). No extra
-secret. The GitHub Release is created by `bump-and-release` with `RELEASE_TOKEN`,
-not `GITHUB_TOKEN`.
+GHCR publish uses the built-in `GITHUB_TOKEN` (`packages: write`).
+No extra secret.
+The GitHub Release is created by `bump-and-release` with `RELEASE_TOKEN`, not `GITHUB_TOKEN`.
 
 ## Dockerfile
 
@@ -231,14 +227,12 @@ Multi-stage build: compile on `rust:1-bookworm`, run from `distroless/cc-debian1
 Both are Debian 12, so the binary gets the same glibc at build and at run time -
 a load-bearing pairing; bump the builder and runtime tags together.
 
-The binary path is `target/release/rust-template`. Rename it to match the
-package name in `Cargo.toml`, or the `COPY --from=builder` step fails.
+The binary path is `target/release/rust-template`.
+Rename it to match the package name in `Cargo.toml`, or the `COPY --from=builder` step fails.
 
-A `.dockerignore` keeps `.git`, `target` and local env files out of the build
-context.
+A `.dockerignore` keeps `.git`, `target` and local env files out of the build context.
 
 `distroless/cc` ships only glibc, libgcc and libssl, and has no package manager.
-A crate that dynamically links another C library builds cleanly but fails at
-startup on the missing `.so` - link it statically or vendor it (openssl's
-`vendored` feature, or rustls), or change the runtime base. Build-time `-dev`
-packages still go in the builder stage via `apt-get`.
+A crate that dynamically links another C library builds cleanly but fails at startup on the missing `.so` -
+link it statically or vendor it (openssl's `vendored` feature, or rustls), or change the runtime base.
+Build-time `-dev` packages still go in the builder stage via `apt-get`.
